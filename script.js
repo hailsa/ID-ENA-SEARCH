@@ -1,20 +1,54 @@
 const inputEan = document.getElementById('eanInput');
-const webAppUrl = "https://script.google.com/macros/s/AKfycbzpnezk3GTCtXHWdbMG7SrP91KY3EKSg9Oo_F1v1nM8AI97dy9FcpFQScCdB29975Rr/exec"; // REEMPLAZA ESTO
+const webAppUrl = "https://script.google.com/macros/s/AKfycbzpnezk3GTCtXHWdbMG7SrP91KY3EKSg9Oo_F1v1nM8AI97dy9FcpFQScCdB29975Rr/exec";
 
-// 1. MANTENER EL FOCO SIEMPRE ACTIVO
-// Si el usuario hace clic en otro lado, el cursor vuelve al buscador en 2 segundos
+// --- 1. LÓGICA DE LA CÁMARA (NUEVO) ---
+let html5QrCode;
+
+async function toggleScanner() {
+    const readerContainer = document.getElementById('reader-container');
+    const searchBoxUI = document.getElementById('search-box-ui');
+
+    // Si la cámara ya está encendida, la apagamos
+    if (html5QrCode && html5QrCode.isScanning) {
+        await html5QrCode.stop();
+        readerContainer.style.display = 'none';
+        searchBoxUI.style.display = 'flex'; 
+        return;
+    }
+
+    // Encendemos la cámara
+    readerContainer.style.display = 'block';
+    searchBoxUI.style.display = 'none'; 
+    
+    html5QrCode = new Html5Qrcode("reader");
+    
+    html5QrCode.start(
+        { facingMode: "environment" }, 
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        (decodedText) => {
+            inputEan.value = decodedText;
+            toggleScanner(); // Cerramos cámara automáticamente al detectar el código
+            buscar();        // Ejecutamos la búsqueda del producto
+        },
+        (errorMessage) => { /* buscando... */ }
+    ).catch(err => {
+        alert("Error de cámara: Asegúrate de dar permisos HTTPS.");
+        console.error(err);
+    });
+}
+
+// --- 2. MANTENER EL FOCO SIEMPRE ACTIVO ---
 setInterval(() => {
-    if (document.activeElement !== inputEan) {
+    // Solo forzamos el foco si la cámara NO está encendida
+    if (document.activeElement !== inputEan && (!html5QrCode || !html5QrCode.isScanning)) {
         inputEan.focus();
     }
 }, 2000);
 
-// 2. DETECTAR ESCANEO AUTOMÁTICO
-// Si el escáner escribe rápido y no envía Enter, esto lo procesará
+// --- 3. DETECTAR ESCANEO AUTOMÁTICO (Pistola) ---
 let timer;
 inputEan.addEventListener('input', () => {
     clearTimeout(timer);
-    // Si pasan 300ms sin que entren nuevos números, asumimos que el escáner terminó
     timer = setTimeout(() => {
         if (inputEan.value.length >= 5) {
             buscar();
@@ -22,13 +56,12 @@ inputEan.addEventListener('input', () => {
     }, 300); 
 });
 
-// 3. FUNCIÓN DE BÚSQUEDA PRINCIPAL
+// --- 4. FUNCIÓN DE BÚSQUEDA PRINCIPAL ---
 async function buscar() {
     const ean = inputEan.value.trim();
     const loader = document.getElementById('loader');
     const resultArea = document.getElementById('result-area');
     
-    // Referencias a los campos de resultado
     const resDesc = document.getElementById('resDesc');
     const resItem = document.getElementById('resItem');
     const resUnidad = document.getElementById('resUnidad');
@@ -52,15 +85,13 @@ async function buscar() {
             return;
         }
 
-        // Mostrar resultados
         resultArea.style.display = 'block';
-        resultArea.className = "success";
         resDesc.innerText = data.descripcion;
         resItem.innerText = data.item;
         resUnidad.innerText = data.unidad;
         resPvp.innerText = "$" + Number(data.pvp).toLocaleString('es-AR');
 
-        // AUTO-LIMPIEZA PARA EL PRÓXIMO ESCANEO
+        // AUTO-LIMPIEZA
         inputEan.value = "";
         inputEan.focus();
 
@@ -70,7 +101,7 @@ async function buscar() {
     }
 }
 
-// Soporte para el "Enter" físico que envían las pistolas
+// Soporte para el "Enter" físico
 inputEan.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         clearTimeout(timer);
